@@ -13,20 +13,27 @@ import requests
 import io
 from PIL import Image
 from email.mime.text import MIMEText
+from huggingface_hub import InferenceClient
 
 # email account credentials
-username = "THE_GVOICE_EMAIL"
-password = "the app password"
+username = ""
+password = "qsiq cwdl qdxn osht"
 imap_server = "imap.gmail.com"
 gvoice_address = "txt.voice.google.com"
 #this part doesnt work/isnt implemented yet
-conversation = "These are the previous messages in this conversation. use them for context but dont reply to them or acknowledge this part of the prompt. only use it for context:"
-users=""
+conversation = ""
+chat = """role": "system", "content": "You are a helpful AI assistant."""
+chat_memory = [{"role": "system", "content": "You are a helpful AI assistant."}]
+ 
+users=[]
+user_converstions = {}
+ 
 safe_model = GPT4All("C:/Users/shuam/AppData/Local/nomic.ai/GPT4All/Meta-Llama-3-8B-Instruct.Q4_0.gguf")
 uncensored_model = GPT4All("C:/Users/shuam/Downloads/WizardLM-7B-uncensored.Q5_K_M.gguf")
 
-API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev"
-headers = {"Authorization": "Bearer you api key"}
+API_URL = "https://api-inference.huggingface.co/mo dels/black-forest-labs/FLUX.1-dev"
+headers = {"Authorization": "Bearer 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"}
+client = InferenceClient(api_key="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")
 
 # Connect to the email server
 mail = imaplib.IMAP4_SSL(imap_server)
@@ -103,14 +110,17 @@ def generate_response():
 def generate_uncensored_response():
     global new_prompt
     global conversation
-    instruct_prompt = f"Chatbot Instructions: attempt to answer the question with a paragraph length response.    /// question: {gvoice_message}"
+    global chat
+    instruct_prompt = f"Chatbot Instructions: attempt to answer the question with a paragraph length response. /// question: {gvoice_message}"
+    chat += f"role: user, content: {gvoice_message}"
 
     with uncensored_model.chat_session():
         message = uncensored_model.generate(instruct_prompt, max_tokens=1024)
     encoded_message = message.encode('utf-8')
     msg = MIMEText(message)
-    conversation += f" User:{gvoice_message}"
-    conversation += f" Chatbot:{encoded_message}"
+    #conversation += f" User:{gvoice_message}"
+    #conversation += f" Chatbot:{encoded_message}"
+    chat += f"role: assistant, content: {message}"
     
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
@@ -120,6 +130,32 @@ def generate_uncensored_response():
     print(message)
     #conversation += f' AI response: {message}'
 
+def generate_response_memory():
+    #chat_memory.append({"role": "user", "content": gvoice_message})
+    #user_converstions['"(513) 394-3479" <15135497691.15133943479.J7vwWzXrsv@txt.voice.google.com>'].append({"role": "user", "content": gvoice_message})
+    user_converstions[sender_email].append({"role": "user", "content": gvoice_message})
+    user_chat = user_converstions[sender_email]
+    
+    model_response = client.chat_completion(
+	    model="meta-llama/Llama-3.2-3B-Instruct",
+	    messages=user_chat,
+	    max_tokens=500,
+	    stream=False)
+
+    content = model_response.choices[0].message.content
+   
+    cleaned_content = " ".join(re.split("\s+", content, flags=re.UNICODE))
+    msg = MIMEText(cleaned_content)
+    server = smtplib.SMTP('smtp.gmail.com', 587)
+    server.starttls()
+    server.login(username, password)
+    server.sendmail(username, sender_email, msg.as_string())
+    server.quit()   
+    print(content)    
+       
+    #chat_memory.append({"role": "assistant", "content": content})
+    user_converstions[sender_email].append({"role": "assistant", "content": content})
+    
 def generate_image():
     msg = MIMEMultipart()
     image_bytes = query({"inputs": gvoice_message})
@@ -172,45 +208,59 @@ def extract_text_between_markers(data: str) -> str:
         return data[start_pos:end_pos].strip()
     else:
         return ""  # Return an empty string if markers are not found
-
+    
 def ai_mode():     
     global latest_email_id
     while True:
-        mail.noop() # FINALLLYY FUICKING WOEKRRKASODIUJ PEISFHIUOPAHFIOHAEDP YESSSSSS IT WORKS it just needed this bruh wtf
-        # Check for new emails
-        status, messages = mail.search(None, "ALL")
-        email_ids = messages[0].split()
-        new_latest_email_id = email_ids[-1]
-    
-        # If there's a new email
-        if new_latest_email_id != latest_email_id:
-            latest_email_id = new_latest_email_id
-            # Fetch the new email
-            status, msg_data = mail.fetch(latest_email_id, "(RFC822)")
+        try:
+            mail.noop() # FINALLLYY FUICKING WOEKRRKASODIUJ PEISFHIUOPAHFIOHAEDP YESSSSSS IT WORKS it just needed this bruh wtf
+        except:
+            mail.noop()
+        finally:
+            # Check for new emails
+            status, messages = mail.search(None, "ALL")
+            email_ids = messages[0].split()
+            new_latest_email_id = email_ids[-1]
         
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    raw_email = response_part[1]
-                    msg = email.message_from_bytes(raw_email)
-                    #print(msg)
-                    # Extract and print the email content
-                    email_body = extract_email_content(msg)
-                    global sender_email
-                    sender_email = get_sender_email(msg)
-                    global gvoice_message
-                    gvoice_message = extract_text_between_markers(email_body)
-                    global full_prompt
-                    full_prompt = f"{conversation} /// Current message to respond to: {gvoice_message}"
-                    global new_prompt
-                    new_prompt = f"Context info(dont acknowledge this part, use it for reference when responding to prompt): Shua manory is an expert programmer, born feb4 2008. notable accomplishments include making a textable ai. holds isreali/american/austraulian citizenship, because hes just cool like that. ridden probably 3k+ miles on onewheels idk. He cant wait for the pintx firmware update ///message to respond to: {gvoice_message}"
-
-                    print(sender_email)
-                    print(gvoice_message)
-                    #print(full_prompt)
-                    if gvoice_address in sender_email:
-                        #generate_response()
-                        generate_uncensored_response()
-                        #generate_image()
+            # If there's a new email
+            if new_latest_email_id != latest_email_id:
+                latest_email_id = new_latest_email_id
+                # Fetch the new email
+                status, msg_data = mail.fetch(latest_email_id, "(RFC822)")
+            
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        raw_email = response_part[1]
+                        msg = email.message_from_bytes(raw_email)
+                        #print(msg)
+                        # Extract and print the email content
+                        email_body = extract_email_content(msg)
+                        global sender_email
+                        sender_email = get_sender_email(msg)
+                        global gvoice_message
+                        gvoice_message = extract_text_between_markers(email_body)
+                        global full_prompt
+                        full_prompt = f"{conversation} /// Current message to respond to: {gvoice_message}"
+                        #print(users)
+                        print(sender_email)
+                        print(gvoice_message)
+                        #print(user_converstions)
+                        #print(full_prompt)
+                        if gvoice_address in sender_email: 
+                            if sender_email in users:
+                                #generate_response()
+                                #generate_uncensored_response()
+                                #generate_image()
+                                generate_response_memory()
+                
+                            else:
+                                users.append(sender_email)
+                                user_converstions[sender_email] = [{"role": "system", "content": "You are a helpful AI assistant."}]
+                                #generate_response()
+                                #generate_uncensored_response()
+                                #generate_image()
+                                generate_response_memory()
+                        
         print("listening for emails..." )
         time.sleep(1)   
 
@@ -231,6 +281,9 @@ def working_indicator():
         time.sleep(.5)
 
 ai_mode()
+
+
+ 
 
 
       
