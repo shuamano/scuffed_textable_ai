@@ -9,3 +9,9 @@ Issues:
 * unfinished sections for generating images
 * when the context window reaches max length, it ends/crashes the script
 * mail.noop() socket errors
+
+Things to add:
+* a proper cl interface
+* fix context length issue
+* have message 'keywords' to allow message passthrough or select other models or clear memory
+  -'NOREPLY', 'UNCENSORED', 'CLEAR'
